@@ -111,6 +111,144 @@
         <div style="font-size:52px;margin-bottom:8px;">📸</div>
         <h3 id="target-name" style="color:var(--ntu-red);margin:0 0 8px;"></h3>
         <p style="color:#555;">已抵達通路，請立即拍照認證！</p>
+        <!-- label 直接綁定 input，使用者手勢不中斷，iOS/Android 都相容 -->
+        <label for="camera-trigger" class="btn-main" style="display:block;cursor:pointer;line-height:1.5;">啟動鏡頭拍照</label>
+        <button style="background:none;border:none;color:#aaa;font-size:13px;cursor:pointer;margin-top:10px;width:100%;" id="btn-camera-skip">稍後再說</button>
+    </div>
+</div>
+
+<!-- 領券成功彈窗 -->
+<div class="modal" id="modal-coupon">
+    <div class="modal-content">
+        <div style="font-size:48px;">🎫</div>
+        <h3 style="color:var(--ntu-red);">認證成功！</h3>
+        <p id="coupon-desc" style="color:#555;font-size:14px;"></p>
+        <div class="barcode-box-normal" id="barcode-text">TAISUN-CODE-99</div>
+        <button class="btn-main" id="btn-coupon-close">完成！繼續前進 →</button>
+    </div>
+</div>
+
+<!-- 終極大滿貫彈窗 -->
+<div class="modal" id="modal-final">
+    <div class="modal-content">
+        <div style="font-size:44px;">🌟</div>
+        <h2 style="color:var(--ntu-red);">校園大滿貫達成！</h2>
+        <p style="color:#555;">你的有料三格已產出</p>
+        <canvas id="strip-canvas" style="max-width:180px;width:100%;border:5px solid white;border-radius:4px;box-shadow:0 6px 20px rgba(0,0,0,.25);"></canvas>
+        <button class="btn-main" style="background:linear-gradient(135deg,#E1306C,#833AB4);margin-top:16px;" id="btn-ig">📤 分享到 IG</button>
+    </div>
+</div>
+
+<input type="file" id="camera-trigger" accept="image/*" capture="environment" style="display:none;">
+<button id="test-btn">測試模式: OFF</button>
+
+<script>
+(function () {
+    // 所有狀態在 IIFE 最頂部宣告，避免 hoisting 問題
+    var state = {
+        active: false,
+        collected: { seven: false, family: false, coop: false },
+        photos: [],
+        isTest: false,
+        nightClaimed: false,
+        currentKey: null,
+        cameraPrompting: false   // 防止定位重複觸發彈窗
+    };
+
+    var locations = {
+        seven:  { lat: 25.0137, lng: 121.5363, name: '7-11 卓聯門市',   reward: '第2件8折',        isNight: false },
+        family: { lat: 25.0191, lng: 121.5422, name: '全家 台大楓林店', reward: '兩件88折',         isNight: false },
+        coop:   { lat: 25.0176, lng: 121.5372, name: '台大合作社',      reward: '第2件加15元多1件', isNight: false },
+        datai:  { lat: 25.0128, lng: 121.5338, name: '7-11 大台門市',   reward: '夜貓專屬',        isNight: true  }
+    };
+
+    // ─── 工具函式 ───────────────────────────────────────
+    function showModal(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'flex';
+    }
+    function closeModal(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    }
+    function isInCampus(latlng) {
+        return latlng.lat >= 25.0090 && latlng.lat <= 25.0230        .barcode-box { background:rgba(255,255,255,.07); border:1.5px dashed var(--night-glow); border-radius:14px; padding:16px 14px; margin:14px 0; font-size:14px; letter-spacing:.5px; line-height:1.8; color:#f0e0ff; }
+        .barcode-box .code { display:inline-block; margin-top:8px; background:rgba(155,48,255,.25); border-radius:8px; padding:4px 12px; font-weight:700; letter-spacing:3px; color:var(--night-accent); font-size:13px; }
+        .discount-main { font-size:26px; font-weight:900; color:var(--night-accent); text-shadow:0 0 12px rgba(255,107,255,.6); }
+        .bonus-tag { display:inline-block; background:linear-gradient(90deg,#ff4444,#ff8800); color:white; font-size:12px; font-weight:700; padding:3px 10px; border-radius:20px; margin-top:6px; }
+
+        .btn-main { background:linear-gradient(135deg,var(--ntu-red),#c00000); color:white; border:none; padding:15px; border-radius:50px; width:100%; font-size:16px; font-weight:700; cursor:pointer; margin-top:16px; letter-spacing:1px; transition:transform .2s; font-family:inherit; }
+        .btn-main:active { transform:scale(.97); }
+        .btn-night { background:linear-gradient(135deg,#6B00CC,var(--night-glow)); box-shadow:0 4px 20px rgba(155,48,255,.4); }
+
+        .stars { position:absolute; top:0; left:0; right:0; height:60px; pointer-events:none; overflow:hidden; border-radius:28px 28px 0 0; }
+        .star { position:absolute; background:white; border-radius:50%; animation:twinkle 2s infinite alternate; }
+        @keyframes twinkle { from{opacity:.2} to{opacity:.9} }
+
+        .time-badge { display:inline-block; background:rgba(155,48,255,.2); border:1px solid var(--night-glow); color:var(--night-accent); font-size:11px; font-weight:700; padding:4px 12px; border-radius:20px; margin-bottom:12px; letter-spacing:1px; }
+        .barcode-box-normal { background:#f8f4ff; border:2px dashed #aaa; border-radius:14px; padding:15px; margin:10px 0; font-family:monospace; font-size:15px; color:#333; line-height:1.6; }
+        .welcome-badge { background:var(--ntu-red); color:white; display:inline-block; padding:4px 14px; border-radius:20px; font-size:12px; font-weight:700; letter-spacing:1px; margin-bottom:10px; }
+
+        #test-btn { position:fixed; bottom:12px; right:12px; font-size:10px; padding:5px 8px; opacity:.5; z-index:3000; border-radius:8px; border:1px solid #666; background:rgba(0,0,0,.5); color:white; cursor:pointer; }
+        #camera-trigger { display:none; }
+        #loading { position:fixed; top:0; left:0; width:100%; height:100%; background:#1a1a2e; color:white; display:flex; align-items:center; justify-content:center; font-size:18px; z-index:9999; letter-spacing:2px; }
+    </style>
+</head>
+<body>
+
+<div id="loading">🗺️ 地圖載入中…</div>
+<header>大吸館 <span>×</span> 台大 — 有料靈魂地圖</header>
+<div id="map"></div>
+
+<!-- 歡迎彈窗 -->
+<div class="modal" id="modal-welcome">
+    <div class="modal-content">
+        <div class="welcome-badge">任務啟動</div>
+        <h2 style="color:var(--ntu-red);margin-top:8px;">有料地圖上線！</h2>
+        <p style="font-size:16px;font-weight:700;line-height:1.7;">
+            巡迴指定通路拍照認證<br>
+            <span style="color:var(--ntu-red);">集齊三格</span>領取大吸館專屬優惠<br>
+            <small style="font-size:12px;color:#888;font-weight:400;">🌙 深夜另有隱藏任務等你發現</small>
+        </p>
+        <button class="btn-main" id="btn-confirm">確認，出發！</button>
+    </div>
+</div>
+
+<!-- 夜貓限定彈窗 -->
+<div class="modal" id="modal-da-tai-night">
+    <div class="modal-content modal-night">
+        <div class="stars" id="star-container"></div>
+        <div style="font-size:38px;margin-bottom:4px;">🦉</div>
+        <div class="time-badge">🌙 21:00 – 00:00 限定</div>
+        <h2>夜貓特攻！大台門市</h2>
+        <p style="font-size:14px;margin-bottom:0;">深夜出沒，專屬犒賞到手</p>
+        <div class="barcode-box">
+            <div class="discount-main">大吸館系列<br>兩件 75 折</div>
+            <div class="bonus-tag">＋ 賣貨便免運券 × 1</div>
+            <div><br>出示給店員掃碼</div>
+            <div class="code">NIGHTOWL888</div>
+        </div>
+        <p style="font-size:11px;color:#aaa;margin-top:0;">※ 限當日 21:00 – 00:00，每人限用一次</p>
+        <button class="btn-main btn-night" id="btn-night-close">🎉 收下夜貓小確幸</button>
+    </div>
+</div>
+
+<!-- 時間不符提示 -->
+<div class="modal" id="modal-time-miss">
+    <div class="modal-content modal-night">
+        <div style="font-size:44px;margin-bottom:8px;">😴</div>
+        <h2 style="color:#aaa;text-shadow:none;">還沒到夜貓時間</h2>
+        <p style="color:#bbb;">大台門市限定活動為<br><span style="color:var(--night-accent);font-weight:700;">每晚 21:00 – 00:00</span><br>屆時再來領取吧！</p>
+        <button class="btn-main btn-night" id="btn-time-miss-close">好的，我晚點再來</button>
+    </div>
+</div>
+
+<!-- 相機啟動彈窗 -->
+<div class="modal" id="modal-camera">
+    <div class="modal-content">
+        <div style="font-size:52px;margin-bottom:8px;">📸</div>
+        <h3 id="target-name" style="color:var(--ntu-red);margin:0 0 8px;"></h3>
+        <p style="color:#555;">已抵達通路，請立即拍照認證！</p>
         <button class="btn-main" id="btn-open-camera">啟動鏡頭拍照</button>
         <button style="background:none;border:none;color:#aaa;font-size:13px;cursor:pointer;margin-top:10px;width:100%;" id="btn-camera-skip">稍後再說</button>
     </div>
