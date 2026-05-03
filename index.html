@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台大 × 大吸館：校園大滿貫任務</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+
+        :root {
+            --ntu-red: #8B0000;
+            --gold: #D4AF37;
+            --night-purple: #3D0066;
+            --night-glow: #9B30FF;
+            --night-accent: #FF6BFF;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+            margin: 0;
+            background: #1a1a2e;
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--ntu-red) 0%, #5a0000 100%);
+            color: white;
+            padding: 14px 20px;
+            text-align: center;
+            font-weight: 900;
+            font-size: 17px;
+            letter-spacing: 2px;
+            position: relative;
+            z-index: 1000;
+            box-shadow: 0 3px 15px rgba(139,0,0,0.5);
+        }
+
+        header span {
+            color: var(--gold);
+        }
+
+        #map {
+            width: 100%;
+            height: calc(100vh - 55px);
+        }
+
+        /* ── 夜貓圖標動畫 ── */
+        @keyframes nightPulse {
+            0%, 100% { filter: drop-shadow(0 0 6px #9B30FF) drop-shadow(0 0 12px #FF6BFF); transform: scale(1); }
+            50% { filter: drop-shadow(0 0 14px #FF6BFF) drop-shadow(0 0 28px #9B30FF); transform: scale(1.15); }
+        }
+
+        .night-owl-icon {
+            animation: nightPulse 2s ease-in-out infinite;
+        }
+
+        /* ── 模態框 ── */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.88);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            background: white;
+            width: 88%;
+            max-width: 390px;
+            border-radius: 28px;
+            padding: 32px 28px;
+            text-align: center;
+            position: relative;
+            animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0.7); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        /* 夜貓彈窗特別樣式 */
+        .modal-night {
+            background: linear-gradient(160deg, #0d001a 0%, #1a0033 60%, #0d001a 100%);
+            border: 2px solid var(--night-glow);
+            box-shadow: 0 0 40px rgba(155, 48, 255, 0.5), inset 0 0 60px rgba(155, 48, 255, 0.08);
+            color: white;
+        }
+
+        .modal-night h2 {
+            color: var(--night-accent);
+            text-shadow: 0 0 20px rgba(255, 107, 255, 0.7);
+            font-size: 22px;
+            margin-bottom: 6px;
+        }
+
+        .modal-night p { color: #ddd; }
+
+        /* ── 優惠框 ── */
+        .barcode-box {
+            background: rgba(255,255,255,0.07);
+            border: 1.5px dashed var(--night-glow);
+            border-radius: 14px;
+            padding: 16px 14px;
+            margin: 14px 0;
+            font-family: 'Noto Sans TC', monospace;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            line-height: 1.8;
+            color: #f0e0ff;
+        }
+
+        .barcode-box .code {
+            display: inline-block;
+            margin-top: 8px;
+            background: rgba(155,48,255,0.25);
+            border-radius: 8px;
+            padding: 4px 12px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: var(--night-accent);
+            font-size: 13px;
+        }
+
+        .discount-main {
+            font-size: 26px;
+            font-weight: 900;
+            color: var(--night-accent);
+            text-shadow: 0 0 12px rgba(255,107,255,0.6);
+        }
+
+        .bonus-tag {
+            display: inline-block;
+            background: linear-gradient(90deg, #ff4444, #ff8800);
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 20px;
+            margin-top: 6px;
+        }
+
+        /* ── 按鈕 ── */
+        .btn-main {
+            background: linear-gradient(135deg, var(--ntu-red), #c00000);
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 50px;
+            width: 100%;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 16px;
+            letter-spacing: 1px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-family: inherit;
+        }
+
+        .btn-main:active { transform: scale(0.97); }
+
+        .btn-night {
+            background: linear-gradient(135deg, #6B00CC, var(--night-glow));
+            box-shadow: 0 4px 20px rgba(155,48,255,0.4);
+        }
+
+        .btn-night:hover {
+            box-shadow: 0 6px 28px rgba(155,48,255,0.6);
+        }
+
+        /* ── 星星背景（夜貓彈窗裝飾） ── */
+        .stars {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 60px;
+            pointer-events: none;
+            overflow: hidden;
+            border-radius: 28px 28px 0 0;
+        }
+
+        .star {
+            position: absolute;
+            width: 3px; height: 3px;
+            background: white;
+            border-radius: 50%;
+            opacity: 0.6;
+            animation: twinkle 2s infinite alternate;
+        }
+
+        @keyframes twinkle {
+            from { opacity: 0.2; }
+            to { opacity: 0.9; }
+        }
+
+        /* ── 時間提示標籤 ── */
+        .time-badge {
+            display: inline-block;
+            background: rgba(155,48,255,0.2);
+            border: 1px solid var(--night-glow);
+            color: var(--night-accent);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 20px;
+            margin-bottom: 12px;
+            letter-spacing: 1px;
+        }
+
+        /* ── 常規優惠框 ── */
+        .barcode-box-normal {
+            background: #f8f4ff;
+            border: 2px dashed #aaa;
+            border-radius: 14px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 15px;
+            letter-spacing: 1px;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        /* ── 測試按鈕 ── */
+        #test-btn {
+            position: fixed;
+            bottom: 12px;
+            right: 12px;
+            font-size: 10px;
+            padding: 5px 8px;
+            opacity: 0.5;
+            z-index: 3000;
+            border-radius: 8px;
+            border: 1px solid #666;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            cursor: pointer;
+        }
+
+        /* 歡迎彈窗裝飾 */
+        .welcome-badge {
+            background: var(--ntu-red);
+            color: white;
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+
+        #camera-trigger { display: none; }
+    </style>
+</head>
+<body>
+
+<header>大吸館 <span>×</span> 台大 — 有料靈魂地圖</header>
+<div id="map"></div>
+
+<!-- ════════════════════════════════
+     歡迎彈窗
+════════════════════════════════ -->
+<div class="modal" id="modal-welcome" style="display:flex;">
+    <div class="modal-content">
+        <div class="welcome-badge">任務啟動</div>
+        <h2 style="color:var(--ntu-red); margin-top:8px;">有料地圖上線！</h2>
+        <p style="font-size:16px; font-weight:700; line-height:1.7;">
+            巡迴指定通路拍照認證<br>
+            <span style="color:var(--ntu-red);">集齊三格</span>領取大吸館專屬優惠<br>
+            <small style="font-size:12px; color:#888; font-weight:400;">🌙 深夜另有隱藏任務等你發現</small>
+        </p>
+        <button class="btn-main" onclick="confirmQuest()">確認，出發！</button>
+    </div>
+</div>
+
+<!-- ════════════════════════════════
+     大台門市：夜貓限定彈窗
+════════════════════════════════ -->
+<div class="modal" id="modal-da-tai-night">
+    <div class="modal-content modal-night">
+        <div class="stars" id="star-container"></div>
+        <div style="font-size:38px; margin-bottom:4px;">🦉</div>
+        <div class="time-badge">🌙 21:00 – 00:00 限定</div>
+        <h2>夜貓特攻！大台門市</h2>
+        <p style="font-size:14px; margin-bottom:0;">深夜出沒，專屬犒賞到手</p>
+        <div class="barcode-box">
+            <div class="discount-main">大吸館系列<br>兩件 75 折</div>
+            <div class="bonus-tag">＋ 賣貨便免運券 × 1</div>
+            <div><br>出示給店員掃碼</div>
+            <div class="code">NIGHTOWL888</div>
+        </div>
+        <p style="font-size:11px; color:#aaa; margin-top:0;">※ 限當日 21:00 – 00:00，每人限用一次</p>
+        <button class="btn-main btn-night" onclick="closeModal('modal-da-tai-night')">🎉 收下夜貓小確幸</button>
+    </div>
+</div>
+
+<!-- ════════════════════════════════
+     時間不符提示
+════════════════════════════════ -->
+<div class="modal" id="modal-time-miss">
+    <div class="modal-content modal-night">
+        <div style="font-size:44px; margin-bottom:8px;">😴</div>
+        <h2 style="color:#aaa; text-shadow:none;">還沒到夜貓時間</h2>
+        <p style="color:#bbb;">大台門市限定活動為<br><span style="color:var(--night-accent); font-weight:700;">每晚 21:00 – 00:00</span><br>屆時再來領取吧！</p>
+        <button class="btn-main btn-night" onclick="closeModal('modal-time-miss')">好的，我晚點再來</button>
+    </div>
+</div>
+
+<!-- ════════════════════════════════
+     相機啟動彈窗
+════════════════════════════════ -->
+<div class="modal" id="modal-camera">
+    <div class="modal-content">
+        <div style="font-size:52px; margin-bottom:8px;">📸</div>
+        <h3 id="target-name" style="color:var(--ntu-red); margin:0 0 8px;"></h3>
+        <p style="color:#555;">已抵達通路，請立即拍照認證！</p>
+        <button class="btn-main" onclick="openCamera()">啟動鏡頭拍照</button>
+        <button style="background:none; border:none; color:#aaa; font-size:13px; cursor:pointer; margin-top:10px; width:100%;" onclick="closeModal('modal-camera')">稍後再說</button>
+    </div>
+</div>
+
+<!-- ════════════════════════════════
+     領券成功彈窗
+════════════════════════════════ -->
+<div class="modal" id="modal-coupon">
+    <div class="modal-content">
+        <div style="font-size:48px;">🎫</div>
+        <h3 id="coupon-title" style="color:var(--ntu-red);">認證成功！</h3>
+        <p id="coupon-desc" style="color:#555; font-size:14px;"></p>
+        <div class="barcode-box-normal" id="barcode-text">TAISUN-CODE-99</div>
+        <button class="btn-main" onclick="closeRewardModal()">完成！繼續前進 →</button>
+    </div>
+</div>
+
+<!-- ════════════════════════════════
+     終極大滿貫彈窗
+════════════════════════════════ -->
+<div class="modal" id="modal-final">
+    <div class="modal-content">
+        <div style="font-size:44px;">🌟</div>
+        <h2 style="color:var(--ntu-red);">校園大滿貫達成！</h2>
+        <p style="color:#555;">你的有料三格已產出</p>
+        <canvas id="strip-canvas" style="max-width:180px; width:100%; border:5px solid white; border-radius:4px; box-shadow:0 6px 20px rgba(0,0,0,0.25);"></canvas>
+        <button class="btn-main" style="background:linear-gradient(135deg,#E1306C,#833AB4);" onclick="location.href='https://instagram.com/'">📤 分享到 IG</button>
+    </div>
+</div>
+
+<input type="file" id="camera-trigger" accept="image/*" capture="camera">
+<button id="test-btn" onclick="toggleTest()">測試模式: OFF</button>
+
+<script>
+// ════════════════════════════════
+// 地點定義
+// ════════════════════════════════
+const locations = {
+    seven:  { lat: 25.0137, lng: 121.5363, name: "7-11 卓聯門市",   reward: "第2件8折",           isNight: false },
+    family: { lat: 25.0191, lng: 121.5422, name: "全家 台大楓林店", reward: "兩件88折",            isNight: false },
+    coop:   { lat: 25.0176, lng: 121.5372, name: "台大合作社",      reward: "第2件加15元多1件",    isNight: false },
+    datai:  { lat: 25.0128, lng: 121.5338, name: "7-11 大台門市",   reward: "夜貓專屬",           isNight: true  }
+};
+
+// 公館站 & 台大校區大致邊界（多邊形）
+const campusBounds = [
+    [25.0230, 121.5290],
+    [25.0230, 121.5460],
+    [25.0090, 121.5460],
+    [25.0090, 121.5290]
+];
+
+// ════════════════════════════════
+// 地圖初始化
+// ════════════════════════════════
+let map = L.map('map', { zoomControl: true }).setView([25.0155, 121.5370], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+// 半透明校區範圍
+L.polygon(campusBounds, {
+    color: '#8B0000',
+    weight: 2,
+    fillColor: '#8B0000',
+    fillOpacity: 0.06,
+    dashArray: '6 4'
+}).addTo(map).bindTooltip('台大 × 公館任務範圍', { sticky: true });
+
+// ── 常規紅色圖標 ──
+const redIcon = L.divIcon({
+    html: `<div style="
+        width:34px; height:34px;
+        background:linear-gradient(135deg,#cc0000,#8B0000);
+        border:3px solid white;
+        border-radius:50% 50% 50% 0;
+        transform:rotate(-45deg);
+        box-shadow:0 3px 10px rgba(139,0,0,0.5);
+    "></div>`,
+    className: '',
+    iconSize: [34, 34],
+    iconAnchor: [17, 34]
+});
+
+// ── 夜貓紫色發光圖標 ──
+const nightIcon = L.divIcon({
+    html: `<div class="night-owl-icon" style="
+        width:42px; height:42px;
+        background:linear-gradient(135deg,#6B00CC,#3D0066);
+        border:2px solid #FF6BFF;
+        border-radius:50% 50% 50% 0;
+        transform:rotate(-45deg);
+        box-shadow:0 0 18px rgba(155,48,255,0.7), 0 0 36px rgba(255,107,255,0.3);
+        display:flex; align-items:center; justify-content:center;
+        position:relative;
+    ">
+        <span style="transform:rotate(45deg); font-size:18px; position:absolute; top:50%; left:50%; translate:-50% -50%;">🦉</span>
+    </div>`,
+    className: '',
+    iconSize: [42, 42],
+    iconAnchor: [21, 42]
+});
+
+// 加入地圖標記
+Object.entries(locations).forEach(([key, loc]) => {
+    const icon = loc.isNight ? nightIcon : redIcon;
+    const marker = L.marker([loc.lat, loc.lng], { icon }).addTo(map);
+
+    if (loc.isNight) {
+        marker.bindPopup(`
+            <b style="color:#9B30FF;">🌙 ${loc.name}</b><br>
+            <span style="color:#555; font-size:12px;">夜貓限定 21:00 – 00:00</span><br>
+            <span style="color:#c00; font-weight:bold;">兩件75折 + 賣貨便免運券</span>
+        `);
+    } else {
+        marker.bindPopup(`<b>${loc.name}</b><br><span style="color:#8B0000;">${loc.reward}</span>`);
+    }
+
+    // 點擊圖標也可觸發
+    marker.on('click', () => {
+        if (loc.isNight) handleNightMarkerClick();
+    });
+});
+
+// ════════════════════════════════
+// 星星裝飾（夜貓彈窗）
+// ════════════════════════════════
+function buildStars() {
+    const container = document.getElementById('star-container');
+    container.innerHTML = '';
+    for (let i = 0; i < 20; i++) {
+        const s = document.createElement('div');
+        s.className = 'star';
+        s.style.left = Math.random() * 100 + '%';
+        s.style.top = Math.random() * 100 + '%';
+        s.style.animationDelay = Math.random() * 2 + 's';
+        s.style.width = s.style.height = (Math.random() * 3 + 1) + 'px';
+        container.appendChild(s);
+    }
+}
+
+// ════════════════════════════════
+// 狀態
+// ════════════════════════════════
+let state = {
+    active: false,
+    collected: { seven: false, family: false, coop: false },
+    photos: [],
+    isTest: false,
+    nightClaimed: false
+};
+
+function isInCampus(latlng) {
+    return latlng.lat >= 25.0090 && latlng.lat <= 25.0230
+        && latlng.lng >= 121.5290 && latlng.lng <= 121.5460;
+}
+
+function isNightTime() {
+    const h = new Date().getHours();
+    return h >= 21 && h < 24;
+}
+
+function confirmQuest() {
+    state.active = true;
+    closeModal('modal-welcome');
+}
+
+// ════════════════════════════════
+// 定位追蹤
+// ════════════════════════════════
+map.locate({ watch: true, enableHighAccuracy: true });
+map.on('locationfound', e => {
+    if (!state.active) return;
+    const u = e.latlng;
+
+    // 必須在校區範圍內（測試模式略過）
+    if (!state.isTest && !isInCampus(u)) return;
+
+    // 夜貓任務判定
+    const d = locations.datai;
+    const nearDatai = map.distance(u, [d.lat, d.lng]) < 60;
+    if ((nearDatai || state.isTest) && !state.nightClaimed) {
+        handleNightMarkerClick();
+    }
+
+    // 常規三格任務判定
+    for (let key in state.collected) {
+        if (!state.collected[key]) {
+            const loc = locations[key];
+            const dist = map.distance(u, [loc.lat, loc.lng]);
+            if (dist < 50 || state.isTest) {
+                triggerCameraUI(key);
+                break;
+            }
+        }
+    }
+});
+
+map.on('locationerror', () => {
+    if (state.isTest) return;
+    // 靜默處理，不打擾用戶
+});
+
+// ════════════════════════════════
+// 夜貓邏輯
+// ════════════════════════════════
+function handleNightMarkerClick() {
+    if (state.nightClaimed) return;
+    if (isNightTime() || state.isTest) {
+        buildStars();
+        showModal('modal-da-tai-night');
+        state.nightClaimed = true;
+    } else {
+        showModal('modal-time-miss');
+    }
+}
+
+// ════════════════════════════════
+// 相機 & 認證
+// ════════════════════════════════
+function triggerCameraUI(key) {
+    window.currentKey = key;
+    document.getElementById('target-name').innerText = locations[key].name;
+    showModal('modal-camera');
+}
+
+function openCamera() { document.getElementById('camera-trigger').click(); }
+
+document.getElementById('camera-trigger').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        state.photos.push(ev.target.result);
+        state.collected[window.currentKey] = true;
+        closeModal('modal-camera');
+        const loc = locations[window.currentKey];
+        document.getElementById('coupon-desc').innerText = `已完成「${loc.name}」認證！獲得：${loc.reward}`;
+        document.getElementById('barcode-text').innerText = "TAISUN-" + Math.random().toString(36).substr(2, 6).toUpperCase();
+        showModal('modal-coupon');
+    };
+    reader.readAsDataURL(file);
+});
+
+function closeRewardModal() {
+    closeModal('modal-coupon');
+    const count = Object.values(state.collected).filter(Boolean).length;
+    if (count === 3) generateStrip();
+}
+
+// ════════════════════════════════
+// 三格生成
+// ════════════════════════════════
+function generateStrip() {
+    const canvas = document.getElementById('strip-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 300; canvas.height = 700;
+    ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 300, 700);
+    let loaded = 0;
+    state.photos.slice(0, 3).forEach((src, i) => {
+        const img = new Image();
+        img.onload = () => {
+            ctx.drawImage(img, 20, 20 + i * 220, 260, 200);
+            loaded++;
+            if (loaded === 3) {
+                ctx.fillStyle = '#8B0000';
+                ctx.font = 'bold 18px Arial';
+                ctx.fillText('台大 × 大吸館 有料三格', 32, 680);
+                showModal('modal-final');
+            }
+        };
+        img.src = src;
+    });
+}
+
+// ════════════════════════════════
+// 工具函式
+// ════════════════════════════════
+function showModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function toggleTest() {
+    state.isTest = !state.isTest;
+    const btn = document.getElementById('test-btn');
+    btn.innerText = `測試模式: ${state.isTest ? 'ON' : 'OFF'}`;
+    btn.style.opacity = state.isTest ? '1' : '0.5';
+    btn.style.borderColor = state.isTest ? '#9B30FF' : '#666';
+    if (state.isTest) alert('測試模式 ON：定位限制已解除，夜貓時間判定也解除，方便預覽所有活動');
+}
+</script>
+</body>
+</html>
