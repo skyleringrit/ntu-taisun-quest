@@ -176,4 +176,184 @@
     }
     function isNightTime() {
         var h = new Date().getHours();
-        re
+        return h >= 21 && h < 24;
+    }
+    function buildStars() {
+        var c = document.getElementById('star-container');
+        if (!c) return;
+        c.innerHTML = '';
+        for (var i = 0; i < 20; i++) {
+            var s = document.createElement('div');
+            s.className = 'star';
+            s.style.left = (Math.random() * 100) + '%';
+            s.style.top  = (Math.random() * 100) + '%';
+            s.style.animationDelay = (Math.random() * 2) + 's';
+            var sz = (Math.random() * 3 + 1) + 'px';
+            s.style.width = sz; s.style.height = sz;
+            c.appendChild(s);
+        }
+    }
+    function handleNightMarkerClick() {
+        if (state.nightClaimed) return;
+        if (isNightTime() || state.isTest) {
+            buildStars();
+            showModal('modal-da-tai-night');
+            state.nightClaimed = true;
+        } else {
+            showModal('modal-time-miss');
+        }
+    }
+    function triggerCameraUI(key) {
+        if (state.cameraPrompting) return;   // 已有彈窗開著，不重複
+        state.cameraPrompting = true;
+        state.currentKey = key;
+        var el = document.getElementById('target-name');
+        if (el) el.innerText = locations[key].name;
+        showModal('modal-camera');
+    }
+    function generateStrip() {
+        var canvas = document.getElementById('strip-canvas');
+        if (!canvas) return;
+        var ctx = canvas.getContext('2d');
+        canvas.width = 300; canvas.height = 700;
+        ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 300, 700);
+        var loaded = 0;
+        var photos = state.photos.slice(0, 3);
+        photos.forEach(function (src, i) {
+            var img = new Image();
+            img.onload = function () {
+                ctx.drawImage(img, 20, 20 + i * 220, 260, 200);
+                loaded++;
+                if (loaded === photos.length) {
+                    ctx.fillStyle = '#8B0000';
+                    ctx.font = 'bold 18px Arial';
+                    ctx.fillText('台大 × 大吸館 有料三格', 32, 680);
+                    showModal('modal-final');
+                }
+            };
+            img.src = src;
+        });
+    }
+
+    // ─── 靜態按鈕事件（DOM 已存在）──────────────────────
+    document.getElementById('btn-confirm').addEventListener('click', function () {
+        state.active = true;
+        closeModal('modal-welcome');
+    });
+    document.getElementById('btn-night-close').addEventListener('click', function () { closeModal('modal-da-tai-night'); });
+    document.getElementById('btn-time-miss-close').addEventListener('click', function () { closeModal('modal-time-miss'); });
+    document.getElementById('btn-camera-skip').addEventListener('click', function () {
+        state.cameraPrompting = false;   // 重置，讓用戶下次靠近時還能再觸發
+        closeModal('modal-camera');
+    });
+    document.getElementById('btn-open-camera').addEventListener('click', function () { document.getElementById('camera-trigger').click(); });
+    document.getElementById('btn-ig').addEventListener('click', function () { location.href = 'https://instagram.com/'; });
+    document.getElementById('btn-coupon-close').addEventListener('click', function () {
+        closeModal('modal-coupon');
+        var count = Object.keys(state.collected).filter(function (k) { return state.collected[k]; }).length;
+        if (count === 3) generateStrip();
+    });
+    document.getElementById('camera-trigger').addEventListener('change', function (e) {
+        var file = e.target.files[0];
+        if (!file || !state.currentKey) return;
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+            state.photos.push(ev.target.result);
+            state.collected[state.currentKey] = true;
+            state.cameraPrompting = false;   // 拍完解鎖，下一個地點可以觸發
+            closeModal('modal-camera');
+            var loc = locations[state.currentKey];
+            var descEl = document.getElementById('coupon-desc');
+            var codeEl = document.getElementById('barcode-text');
+            if (descEl) descEl.innerText = '已完成「' + loc.name + '」認證！獲得：' + loc.reward;
+            if (codeEl) codeEl.innerText = 'TAISUN-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+            showModal('modal-coupon');
+        };
+        reader.readAsDataURL(file);
+    });
+    document.getElementById('test-btn').addEventListener('click', function () {
+        state.isTest = !state.isTest;
+        var btn = document.getElementById('test-btn');
+        btn.innerText = '測試模式: ' + (state.isTest ? 'ON' : 'OFF');
+        btn.style.opacity = state.isTest ? '1' : '.5';
+        btn.style.borderColor = state.isTest ? '#9B30FF' : '#666';
+        if (state.isTest) alert('測試模式 ON：定位與夜間時間限制已全部解除');
+    });
+
+    // ─── 等 DOM + Leaflet 都就緒後初始化地圖 ────────────
+    function initMap() {
+        if (typeof L === 'undefined') {
+            document.getElementById('loading').innerText = '⚠️ 地圖載入失敗，請確認網路後重新整理';
+            return;
+        }
+        document.getElementById('loading').style.display = 'none';
+
+        var map = L.map('map', { zoomControl: true }).setView([25.0155, 121.5370], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // 校區範圍
+        L.polygon([
+            [25.0230, 121.5290], [25.0230, 121.5460],
+            [25.0090, 121.5460], [25.0090, 121.5290]
+        ], { color: '#8B0000', weight: 2, fillColor: '#8B0000', fillOpacity: 0.06, dashArray: '6 4' })
+        .addTo(map)
+        .bindTooltip('台大 × 公館任務範圍', { sticky: true });
+
+        // 常規圖標
+        var redIcon = L.divIcon({
+            html: '<div style="width:34px;height:34px;background:linear-gradient(135deg,#cc0000,#8B0000);border:3px solid white;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 3px 10px rgba(139,0,0,.5);"></div>',
+            className: '', iconSize: [34, 34], iconAnchor: [17, 34]
+        });
+
+        // 夜貓圖標
+        var nightIcon = L.divIcon({
+            html: '<div class="night-owl-icon" style="width:42px;height:42px;background:linear-gradient(135deg,#6B00CC,#3D0066);border:2px solid #FF6BFF;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 0 18px rgba(155,48,255,.7),0 0 36px rgba(255,107,255,.3);position:relative;"><span style="transform:rotate(45deg);font-size:18px;position:absolute;top:50%;left:50%;translate:-50% -50%;">🦉</span></div>',
+            className: '', iconSize: [42, 42], iconAnchor: [21, 42]
+        });
+
+        Object.keys(locations).forEach(function (key) {
+            var loc = locations[key];
+            var marker = L.marker([loc.lat, loc.lng], { icon: loc.isNight ? nightIcon : redIcon }).addTo(map);
+            if (loc.isNight) {
+                marker.bindPopup('<b style="color:#9B30FF;">🌙 ' + loc.name + '</b><br><span style="font-size:12px;color:#555;">夜貓限定 21:00–00:00</span><br><span style="color:#c00;font-weight:bold;">兩件75折 + 賣貨便免運券</span>');
+                marker.on('click', handleNightMarkerClick);
+            } else {
+                marker.bindPopup('<b>' + loc.name + '</b><br><span style="color:#8B0000;">' + loc.reward + '</span>');
+            }
+        });
+
+        map.locate({ watch: true, enableHighAccuracy: true });
+        map.on('locationfound', function (e) {
+            if (!state.active) return;
+            var u = e.latlng;
+            if (!state.isTest && !isInCampus(u)) return;
+
+            // 夜貓
+            var d = locations.datai;
+            if (!state.nightClaimed && (map.distance(u, [d.lat, d.lng]) < 60 || state.isTest)) {
+                handleNightMarkerClick();
+            }
+            // 常規三格
+            var keys = Object.keys(state.collected);
+            for (var i = 0; i < keys.length; i++) {
+                var key = keys[i];
+                if (!state.collected[key]) {
+                    var loc = locations[key];
+                    if (map.distance(u, [loc.lat, loc.lng]) < 50 || state.isTest) {
+                        triggerCameraUI(key);
+                        break;
+                    }
+                }
+            }
+        });
+
+        showModal('modal-welcome');
+    }
+
+    document.addEventListener('DOMContentLoaded', initMap);
+})();
+</script>
+</body>
+</html>
